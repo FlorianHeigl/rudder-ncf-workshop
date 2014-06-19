@@ -1,0 +1,8 @@
+# Example of the definition of a service to define the baseline site policy
+# Uses the technique ntp
+
+bundle agent baseline(path)
+{
+  methods:
+      "any" usebundle => ntp;
+}

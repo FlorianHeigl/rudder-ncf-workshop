@@ -1,0 +1,58 @@
+# @name Jenkins deployement
+# @description Install and configure Jenkins (with its dependencies)
+# @version 0.1
+
+bundle agent jenkins
+{
+  vars:
+    "git_config" string => "[user]
+        name = Jenkins
+        email = nicolas.charles@normation.com
+";
+
+  methods:
+      "install_tomcat"           usebundle => package_install("${tomcat_knowledge.tomcat_package}");
+
+      "install_dependencies"     usebundle => package_install("${jenkins_knowledge.jenkins_dependencies}");
+
+      "configure_git_for_tomcat" usebundle => file_ensure_lines_present("${tomcat_knowledge.tomcat_home}/.gitconfig", "${git_config}");
+      "perms_for_git"            usebundle => permissions("${tomcat_knowledge.tomcat_home}/.gitconfig", "755", "${tomcat_knowledge.tomcat_user}", "${tomcat_knowledge.tomcat_user}");
+
+      "create_jenkins_home_dir"  usebundle => file_create("${jenkins_knowledge.jenkins_home}/."),
+         comment => "creating Jenkins home dir";
+
+      "perms_jenkins_home_dir"   usebundle => permissions("${jenkins_knowledge.jenkins_home}/.", "755", "${tomcat_knowledge.tomcat_user}", "${tomcat_knowledge.tomcat_user}");
+
+      "configure_home_dir_in_tomcat" usebundle => file_ensure_line_present_in_xml_tag("${tomcat_knowledge.tomcat_context_file}", "Context", "<Environment name=\"JENKINS_HOME\" value=\"${jenkins_knowledge.jenkins_home}\" type=\"java.lang.String\"/>"),
+         comment => "Adding Jenkins home dir to Tomcat context";
+
+      "create_maven_repo"        usebundle => file_create("${jenkins_knowledge.maven_repository_entries}/.");
+      "perms_home_dir"           usebundle => permissions("${jenkins_knowledge.maven_repository_entries}/.", "755", "${tomcat_knowledge.tomcat_user}", "${tomcat_knowledge.tomcat_user}");
+
+      "deploy_war"               usebundle => file_copy_from_local_source("/vagrant/jenkins.war", "${jenkins_knowledge.jenkins_war_path}");
+
+      "copy_plugins"             usebundle => file_copy_from_local_source_recursion("/vagrant/plugins", "${jenkins_knowledge.jenkins_plugin_folder}", "1");
+
+      "restart_tomcat"           usebundle => service_restart("${tomcat_knwoledge.tomcat_service}"),
+         ifvarclass => "file_copy__vagrant_jenkins_war_repaired";
+
+
+}
+
+
+bundle agent deploy_jobs(job_descriptor_path, job_name)
+{
+  vars:
+    "job_content[${job_name}]"    string => readfile("${job_descriptor_path}/${job_name}.xml", "4000");
+    "job_url[${job_name}]"        string => "${jenkins_knowledge.jenkins_base_url}/job/${job_name}/api/json?tree=displayName";
+    "job_curl[${job_name}]"       string => canonify("${job_url[${job_name}]}");
+
+    "job_create_url[${job_name}]" string => "${jenkins_knowledge.jenkins_base_url}/createItem?name=${job_name}";
+
+  methods:
+    "job absent" usebundle => http_request_check_status_headers("GET", "${deploy_jobs.job_url[${job_name}]}", "404", "");
+
+    "deploy job" usebundle => http_request_content_headers("POST", "${deploy_jobs.job_create_url[${job_name}]}", "${deploy_jobs.job_content[${job_name}]}", "Content-type: application/xml"),
+	ifvarclass => "http_request_check_status_headers_${job_curl[${job_name}]}_ok";
+
+}

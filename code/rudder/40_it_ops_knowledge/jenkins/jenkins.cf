@@ -1,0 +1,12 @@
+bundle common jenkins_knowledge
+{
+  vars:
+    "jenkins_dependencies" slist => { "git", "maven" };
+    "jenkins_home" string => "/var/lib/jenkins";
+    "jenkins_plugin_folder" string => "${jenkins_home}/plugins";
+
+    "jenkins_war_path" string => "${tomcat_knowledge.tomcat_path}/webapps/jenkins.war";
+    "jenkins_base_url" string => "http://localhost:8080/jenkins/";
+
+    "maven_repository_entries" slist => { "${tomcat_knowledge.tomcat_home}/.m2", "${tomcat_knowledge.tomcat_home}/.m2/repository"};
+}

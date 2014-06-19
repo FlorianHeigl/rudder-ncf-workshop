@@ -1,0 +1,7 @@
+bundle agent continuous_integration(path)
+{
+  methods:
+    "install jenkins" usebundle => jenkins;
+
+    "deploy job" usebundle => deploy_jobs("/vagrant/jobs", "rudder-parent-pom");
+}

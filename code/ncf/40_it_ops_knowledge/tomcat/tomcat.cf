@@ -1,0 +1,13 @@
+bundle common tomcat_knowledge
+{
+  vars:
+    "tomcat_package" string => "tomcat6";
+    "tomcat_path" string => "/var/lib/tomcat6";
+    "tomcat_user" string => "tomcat6";
+    "tomcat_home" string => "/usr/share/tomcat6";
+
+    "tomcat_context_file" string => "${tomcat_path}/conf/context.xml";
+
+    "path_to_tomcat_default" string => "/etc/default/tomcat6";
+
+}

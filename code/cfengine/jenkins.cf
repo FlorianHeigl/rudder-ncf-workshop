@@ -1,0 +1,140 @@
+# Pure CFEngine implementation for installing jenkins
+
+bundle agent jenkins {
+  methods:
+    "install tomcat"  usebundle => tomcat6_install;
+    "deploy jenkins"  usebundle => deploy_jenkins;
+    "install plugins" usebundle => jenkins_install_plugins;
+    "post install"    usebundle => tomcat_post_install;
+    "deploy jobs"     usebundle => jenkins_deploy_jobs;
+}
+
+bundle common tomcat6 {
+  vars:
+    "tomcat_path" string => "/var/lib/tomcat6";
+    "tomcat_user" string => "tomcat6";
+    "tomcat_home" string => "/usr/share/tomcat6";
+}
+
+bundle common jenkins {
+  vars:
+    "jenkins_home" string => "/var/lib/jenkins";
+    "plugin_folder" string => "${jenkins.jenkins_home}/plugins";
+
+}
+
+bundle agent tomcat6_install {
+  vars:
+    "tomcat_config[JAVA_OPTS]" string => "\"-Djava.awt.headless=true -Xmx1024m -XX:+UseConcMarkSweepGC\"";
+
+  files:
+    tomcat6_package_ok::
+      "/etc/default/tomcat6"
+        edit_line => maintain_key_values("tomcat6.tomcat_config", "="),
+        comment   => "Increase Xmx for tomcat",
+        classes   => classes_generic("tomcat6_configuration");
+
+    tomcat6_package_ok::
+      "${tomcat6.tomcat_home}/.ssh/."
+        create => "true",
+        perms  => og("tomcat6", "tomcat6"),
+        comment => "Create ssh path for tomcat";
+
+  packages:
+      "tomcat6"
+        package_policy => "add",
+        classes        => classes_generic("tomcat6_package"),
+        comment        => "Install tomcat6 on the system";
+}
+
+bundle agent deploy_jenkins {
+  vars:
+    "jenkins_src_war" string => "/vagrant/jenkins.war";
+
+  files:
+    "${jenkins.jenkins_home}/."
+      create => "true",
+      perms  => og("tomcat6", "tomcat6"),
+      comment => "Create home for Jenkins";
+
+    "${tomcat6.tomcat_path}/webapps/jenkins.war"
+      copy_from => local_dcp("${jenkins_src_war}"),
+      perms  => og("tomcat6", "tomcat6"),
+      classes => classes_generic("tomcat6_deployed_war");
+
+    "${tomcat6.tomcat_path}/conf/context.xml"
+      edit_line => add_jenkins_home_in_context("${jenkins.jenkins_home}"),
+      classes   => classes_generic("tomcat6_configuration");
+
+  packages:
+    "maven"
+      package_policy => "add";
+}
+
+bundle edit_line add_jenkins_home_in_context(jenkins_home) {
+  insert_lines:
+    "<Environment name=\"JENKINS_HOME\" value=\"${jenkins_home}\" type=\"java.lang.String\"/>"
+    location => after("<Context>");
+}
+
+bundle agent jenkins_install_plugins {
+  vars:
+    "source_plugin_folder" string => "/vagrant/plugins";
+
+  files:
+    "${jenkins.plugin_folder}"
+      copy_from => local_dcp("${source_plugin_folder}"),
+      depth_search => recurse("1"),
+      perms  => og("tomcat6", "tomcat6"),
+      classes => classes_generic("jenkins_plugins_installation");
+
+    # Configure git user
+    "${tomcat6.tomcat_home}/.gitconfig"
+      create => "true",
+      perms  => mog("644", "tomcat6", "tomcat6"),
+      edit_line => insert_lines("[user]
+        name = Jenkins
+        email = nicolas.charles@normation.com
+");
+    # Create maven repos
+    "${tomcat6.tomcat_home}/.m2/."
+      create => "true",
+      perms  => mog("755", "tomcat6", "tomcat6");
+
+    "${tomcat6.tomcat_home}/.m2/repository/."
+      create => "true",
+      perms  => mog("755", "tomcat6", "tomcat6");
+
+  packages:
+    "git"
+      package_policy => "add";
+
+  commands:
+    jenkins_plugins_installation_repaired.!(tomcat6_deployed_war_repaired|tomcat6_configuration_repaired)::
+      "/usr/bin/curl http://localhost:8080/jenkins/safeRestart -X POST";
+}
+
+bundle agent tomcat_post_install {
+  commands:
+    "/etc/init.d/tomcat6"
+      args       => "restart",
+      ifvarclass => "tomcat6_deployed_war_repaired|tomcat6_configuration_repaired";
+}
+
+
+bundle agent  jenkins_deploy_jobs {
+  vars:
+     "jenkins_base_url" string => "http://localhost:8080/jenkins/";
+     "job_name" slist => { "rudder-parent-pom", "rudder-commons" };
+     "job_descriptor_path" string => "/vagrant/";
+  classes:
+   jenkins_plugins_installation_kept::
+     # Checks if ${job_name} is present
+     "${job_name}_not_defined" expression => returnszero("/usr//bin/curl -I -s -o /dev/null -w \"%{http_code}\" ${jenkins_base_url}/job/${job_name}/api/json?tree=displayName | /bin/grep -q 404", "useshell");
+
+  commands:
+     "/usr/bin/curl http://localhost:8080/jenkins/createItem?name=${job_name}  -H 'Content-type: application/xml' -X POST --data \"@/vagrant/${job_name}.xml\""
+       ifvarclass => canonify("${job_name}_not_defined"),
+       comment => "Deploy job ${job_name}";
+
+}
