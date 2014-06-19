@@ -58,7 +58,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       vb.customize ["modifyvm", :id, "--memory", "1536"]
     end
     rudder_config.vm.network :private_network, ip: "192.168.30.10"
-
+    rudder_config.vm.hostname = "server"
     rudder_config.vm.provision :shell, :path => "provision/server_rudder.sh"
   end
 
@@ -67,6 +67,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     node_config.vm.network :forwarded_port, guest: 8080 , host: 8181
     node_config.vm.box = "debian-7.0-amd64-minimal"
     node_config.vm.box_url = "https://www.dropbox.com/s/gxouugzbnjlny1k/debian-7.0-amd64-minimal.box"
+    node_config.vm.hostname = "node"
 
     node_config.vm.provider :virtualbox do |vb|
       # Use VBoxManage to customize the VM. For example to change memory:
